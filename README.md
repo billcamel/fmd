@@ -1,8 +1,10 @@
-# FMD (Douban FM Daemon)
+# FMD (Douban FM Daemon) for Raspberry Pi FM Transmitter 
 
 FMD stands for *Douban FM Daemon*, inspired by MPD (Music Player Daemon).
 
 FMD plays music from Douban FM in background and communicate with clients through TCP connections.
+
+This FMD branch adds the support to broadcast Douban FM music by FM with Raspberry Pi. 
 
 ## Config
 
@@ -28,8 +30,8 @@ Replace *[email]* and *[passwd]* with your douban account and password.
 
 In *Output* section, there are the following config items:
 
-    driver [string] # audio output driver, default is "alsa"
-    device [string] # audio output device, can be omitted
+    driver [string] # audio output driver, default is "alsa". Use "pifm" for FM mode on RPi.
+    device [string] # audio output device, can be omitted. For "pifm" driver, set FM transmission frequency here, eg. 102.4
     rate [int]      # audio ouput rate, default to 44100
 
 In *Server* section, there are the following config items:

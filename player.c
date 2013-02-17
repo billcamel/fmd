@@ -1,7 +1,9 @@
 #include "player.h"
+#include "pifm.h"
 
 #include <stdio.h>
 #include <signal.h>
+#include <string.h>
 
 static size_t download_callback(char *ptr, size_t size, size_t nmemb, void *userp)
 {
@@ -54,7 +56,24 @@ static void* play_thread(void *data)
         err = mpg123_decode_frame(pl->mh, &off, &audio, &size);
         switch (err) {
             case MPG123_OK:
-                ao_play(pl->dev, (char*) audio, size);
+                if (strcmp(pl->config.driver, "pifm") == 0) 
+                {
+                    if (size % 2 != 0)
+                    {
+                        printf("ERROR: size is odd");
+                        exit(-1);
+                    }
+                    int i;
+                    for (i = 0; i < size / 2; ++i)
+                    {
+                        short data = ((((char*) audio)[2*i+1])<<8) + (((char *)audio)[2*i]);
+                        fm_play(data, pl->config.rate);
+                    }
+                }
+                else
+                {
+                    ao_play(pl->dev, (char*) audio, size);
+                }
                 break;
             case MPG123_NEED_MORE:
                 if (pthread_kill(pl->tid_dl, 0) == 0) {
@@ -84,33 +103,48 @@ int fm_player_open(fm_player_t *pl, fm_player_config_t *config)
 {
     pl->config = *config;
 
+    if (strcmp(config->driver, "pifm") == 0)
+    {
+        float f = atof(config->dev);
+        if (f < 1)
+            f = 103.3;
+        printf("Player audio driver: pifm\n");
+        printf("Player sample rate: %d Hz\n", config->rate);
+        printf("Player FM fequency: %f Hz\n", f);
+        config->channels = 1;
+        fm_setup_fm();
+        fm_setup_dma(f);
+    }
+    else
+    {
+        ao_sample_format ao_fmt;
+        ao_fmt.rate = config->rate;
+        ao_fmt.channels = config->channels;
+        ao_fmt.bits = mpg123_encsize(config->encoding) * 8;
+        ao_fmt.byte_format = AO_FMT_NATIVE;
+        ao_fmt.matrix = 0;
+        
+        int driver = ao_driver_id(config->driver);
+        if (driver == -1) {
+            return -1;
+        }
+        
+        ao_info *driver_info = ao_driver_info(driver);
+        printf("Player audio driver: %s\n", driver_info->name);
+        printf("Player sample rate: %d Hz\n", pl->config.rate);
+        ao_option *options = NULL;
+        if (config->dev[0] != '\0') {
+            ao_append_option(&options, "dev", config->dev);
+        }
+        pl->dev = ao_open_live(driver, &ao_fmt, options);
+        ao_free_options(options);
+        if (pl->dev == NULL)
+            return -1;
+    }
+
     pl->mh = mpg123_new(NULL, NULL);
     mpg123_format_none(pl->mh);
     mpg123_format(pl->mh, config->rate, config->channels, config->encoding);
-
-    ao_sample_format ao_fmt;
-    ao_fmt.rate = config->rate;
-    ao_fmt.channels = config->channels;
-    ao_fmt.bits = mpg123_encsize(config->encoding) * 8;
-    ao_fmt.byte_format = AO_FMT_NATIVE;
-    ao_fmt.matrix = 0;
-
-    int driver = ao_driver_id(config->driver);
-    if (driver == -1) {
-        return -1;
-    }
-
-    ao_info *driver_info = ao_driver_info(driver);
-    printf("Player audio driver: %s\n", driver_info->name);
-    printf("Player sample rate: %d Hz\n", pl->config.rate);
-    ao_option *options = NULL;
-    if (config->dev[0] != '\0') {
-        ao_append_option(&options, "dev", config->dev);
-    }
-    pl->dev = ao_open_live(driver, &ao_fmt, options);
-    ao_free_options(options);
-    if (pl->dev == NULL)
-        return -1;
 
     pl->curl = curl_easy_init();
     curl_easy_setopt(pl->curl, CURLOPT_WRITEFUNCTION, download_callback);
@@ -132,10 +166,16 @@ void fm_player_close(fm_player_t *pl)
         fm_player_stop(pl);
     }
 
-    ao_close(pl->dev);
     mpg123_delete(pl->mh);
     curl_easy_cleanup(pl->curl);
-
+    if (strcmp(pl->config.driver, "pifm") == 0) 
+    {
+        fm_unsetup_dma();
+    }
+    else
+    {
+        ao_close(pl->dev);
+    }
     pthread_mutex_destroy(&pl->mutex_status);
     pthread_cond_destroy(&pl->cond_play);
 }

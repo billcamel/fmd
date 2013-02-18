@@ -107,7 +107,7 @@ int fm_player_open(fm_player_t *pl, fm_player_config_t *config)
     {
         float f = atof(config->dev);
         if (f < 1)
-            f = 103.3;
+            f = 102.4;
         printf("Player audio driver: pifm\n");
         printf("Player sample rate: %d Hz\n", config->rate);
         printf("Player FM fequency: %f Hz\n", f);
